@@ -24,6 +24,9 @@
 #include <utility>
 
 #include <sophus/se2.hpp>
+#include <sophus/se3.hpp>
+#include <Eigen/Core>
+
 
 /**
  * \file
@@ -194,6 +197,106 @@ class spatial_hash<Sophus::SE2d, void> {
 
  private:
   spatial_hash<std::tuple<double, double, double>> underlying_hasher_{{1., 1., 1.}};
+};
+
+/**
+ * Specialization for Sophus::SE3d. Will calculate the spatial hash based on the translation and rotation.
+ */
+template<>
+class spatial_hash<Sophus::SE3d, void> {
+  public:
+    /// Constructs a spatial hasher given per-coordinate resolutions.
+    /**
+     * \param x_clustering_resolution Clustering resolution for the X axis, in meters.
+     * \param y_clustering_resolution Clustering resolution for the Y axis, in meters.
+     * \param z_clustering_resolution Clustering resolution for the Z axis, in meters.
+     * \param roll_clustering_resolution Clustering resolution for the roll axis, in radians.
+     * \param pitch_clustering_resolution Clustering resolution for the pitch axis, in radians.
+     * \param yaw_clustering_resolution Clustering resolution for the yaw axis, in radians.
+     */
+    explicit spatial_hash(
+        double x_clustering_resolution,
+        double y_clustering_resolution,
+        double z_clustering_resolution,
+        double roll_clustering_resolution,
+        double pitch_clustering_resolution,
+        double yaw_clustering_resolution)
+        : underlying_hasher_{{x_clustering_resolution, y_clustering_resolution, z_clustering_resolution,
+                              roll_clustering_resolution, pitch_clustering_resolution, yaw_clustering_resolution}} {};
+
+    /// Constructs a spatial hasher given per-group resolutions.
+    /**
+     * \param linear_clustering_resolution Clustering resolution for translational coordinates, in meters.
+     * \param angular_clustering_resolution Clustering resolution for rotational coordinates, in radians.
+     */
+    explicit spatial_hash(double linear_clustering_resolution, double angular_clustering_resolution)
+        : spatial_hash(linear_clustering_resolution, linear_clustering_resolution, linear_clustering_resolution,
+                       angular_clustering_resolution, angular_clustering_resolution, angular_clustering_resolution){};
+
+    /// Default constructor
+    spatial_hash() = default;
+
+    /// Calculates the tuple hash, using the given resolution for x, y, z, roll, pitch and yaw given at construction time.
+    /**
+     * \param state The state to be hashed.
+     * \return The calculated hash.
+     */
+    std::size_t operator()(const Sophus::SE3d& state) const {
+      const auto& position = state.translation();
+      const auto& rotation = state.so3().log();
+      return underlying_hasher_(std::make_tuple(position.x(), position.y(), position.z(), rotation.x(), rotation.y(), rotation.z()));
+    }
+
+  private:
+    spatial_hash<std::tuple<double, double, double, double, double, double>> underlying_hasher_{{1., 1., 1., 1., 1., 1.}};
+};
+
+/* Specialization for Eigen::Vector<double, 6>. Will calculate the spatial hash based on the translation and rotation. */
+template<>
+class spatial_hash<Eigen::Vector<double, 6>, void> {
+  public:
+    /// Constructs a spatial hasher given per-coordinate resolutions.
+    /**
+     * \param x_clustering_resolution Clustering resolution for the X axis, in meters.
+     * \param y_clustering_resolution Clustering resolution for the Y axis, in meters.
+     * \param z_clustering_resolution Clustering resolution for the Z axis, in meters.
+     * \param roll_clustering_resolution Clustering resolution for the roll axis, in radians.
+     * \param pitch_clustering_resolution Clustering resolution for the pitch axis, in radians.
+     * \param yaw_clustering_resolution Clustering resolution for the yaw axis, in radians.
+     */
+    explicit spatial_hash(
+        double x_clustering_resolution,
+        double y_clustering_resolution,
+        double z_clustering_resolution,
+        double roll_clustering_resolution,
+        double pitch_clustering_resolution,
+        double yaw_clustering_resolution)
+        : underlying_hasher_{{x_clustering_resolution, y_clustering_resolution, z_clustering_resolution,
+                              roll_clustering_resolution, pitch_clustering_resolution, yaw_clustering_resolution}} {};
+
+    /// Constructs a spatial hasher given per-group resolutions.
+    /**
+     * \param linear_clustering_resolution Clustering resolution for translational coordinates, in meters.
+     * \param angular_clustering_resolution Clustering resolution for rotational coordinates, in radians.
+     */
+    explicit spatial_hash(double linear_clustering_resolution, double angular_clustering_resolution)
+        : spatial_hash(linear_clustering_resolution, linear_clustering_resolution, linear_clustering_resolution,
+                       angular_clustering_resolution, angular_clustering_resolution, angular_clustering_resolution){};
+
+    /// Default constructor
+    spatial_hash() = default;
+
+    /// Calculates the tuple hash, using the given resolution for x, y, z, roll, pitch and yaw given at construction time.
+    /**
+     * \param state The state to be hashed.
+     * \return The calculated hash.
+     */
+    std::size_t operator()(const Eigen::Vector<double, 6>& state) const {
+      return underlying_hasher_(std::make_tuple(state[0], state[1], state[2], state[3], state[4], state[5]));
+    }
+
+  private:
+    spatial_hash<std::tuple<double, double, double, double, double, double>> underlying_hasher_{{1., 1., 1., 1., 1., 1.}};
 };
 
 }  // namespace beluga
