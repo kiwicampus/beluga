@@ -62,16 +62,16 @@ struct NDTCell {
   /// Transform the normal distribution according to tf, both mean and covariance.
   friend NDTCell operator*(const Sophus::SE2<scalar_type>& tf, const NDTCell& ndt_cell) {
     static_assert(num_dim == 2, "Cannot transform a non 2D NDT Cell with a SE2 transform.");
-    const Eigen::Vector2d uij = tf * ndt_cell.mean;
-    const Eigen::Matrix2Xd cov = tf.so2().matrix() * ndt_cell.covariance * tf.so2().matrix().transpose();
+    const Eigen::Vector2<scalar_type> uij = tf * ndt_cell.mean;
+    const Eigen::Matrix2X<scalar_type> cov = tf.so2().matrix() * ndt_cell.covariance * tf.so2().matrix().transpose();
     return NDTCell{uij, cov};
   }
 
   /// Transform the normal distribution according to tf, both mean and covariance.
   friend NDTCell operator*(const Sophus::SE3<scalar_type>& tf, const NDTCell& ndt_cell) {
     static_assert(num_dim == 3, "Cannot transform a non 3D NDT Cell with a SE3 transform.");
-    const Eigen::Vector3d uij = tf * ndt_cell.mean;
-    const Eigen::Matrix3Xd cov = tf.so3().matrix() * ndt_cell.covariance * tf.so3().matrix().transpose();
+    const Eigen::Vector3<scalar_type> uij = tf * ndt_cell.mean;
+    const Eigen::Matrix3X<scalar_type> cov = tf.so3().matrix() * ndt_cell.covariance * tf.so3().matrix().transpose();
     return NDTCell{uij, cov};
   }
 };

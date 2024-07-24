@@ -58,7 +58,7 @@ struct CellHasher {
 /// Fit a vector of points to an NDT cell, by computing its mean and covariance.
 template <int NDim, typename Scalar = double>
 inline NDTCell<NDim, Scalar> fit_points(const std::vector<Eigen::Vector<Scalar, NDim>>& points) {
-  static constexpr double kMinVariance = 1e-5;
+  static constexpr Scalar kMinVariance = 1e-5;
   Eigen::Map<const Eigen::Matrix<Scalar, NDim, Eigen::Dynamic>> points_view(
       reinterpret_cast<const Scalar*>(points.data()), NDim, static_cast<int64_t>(points.size()));
   const Eigen::Vector<Scalar, NDim> mean = points_view.rowwise().mean();
