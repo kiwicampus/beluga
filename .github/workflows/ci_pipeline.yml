@@ -15,10 +15,10 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           cache: pip
 
@@ -37,7 +37,6 @@ jobs:
         ros_distro:
           - noetic
           - humble
-          - iron
           - jazzy
         include:
           - ros_distro: humble
@@ -48,6 +47,7 @@ jobs:
       - name: Install debian packages
         run: >-
           sudo apt-get update && sudo apt-get install -y \
+            gcovr \
             git \
             lcov \
             python3-colcon-common-extensions \
@@ -57,8 +57,14 @@ jobs:
             python3-pip \
             python3-vcstool
 
+      - name: Install python packages
+        run: |
+             export PIP_BREAK_SYSTEM_PACKAGES=1
+             pip install pre-commit==2.20.0 \
+             h5py==3.11.0
+
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           path: ${{ github.workspace }}/src/beluga
 
@@ -71,8 +77,9 @@ jobs:
       - name: Install dependencies
         run: |
           . /opt/ros/${{ matrix.ros_distro }}/setup.sh
+          export PIP_BREAK_SYSTEM_PACKAGES=1
           rosdep update
-          rosdep install -r --from-paths src -y -i -t build -t test -t doc
+          sudo -E rosdep install -r --from-paths src -y -i -t exec -t build -t doc -t test
           colcon mixin add default https://raw.githubusercontent.com/colcon/colcon-mixin-repository/c75e4b34a3959524564afb584e2aa33c7eec323c/index.yaml
           colcon mixin update default
 
@@ -94,25 +101,29 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: ./src/beluga/tools/run-clang-tidy.sh
 
+      - name: Enforce code coverage
+        working-directory: ${{ github.workspace }}
+        run: ./src/beluga/tools/check-code-coverage.sh
+
       - name: Upload code coverage report
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./lcov/total_coverage.info,./coveragepy/.coverage
           name: codecov-umbrella
           fail_ci_if_error: true
           verbose: true
-        if: ${{ matrix.upload_artifacts }}
+        if: ${{ matrix.upload_artifacts && !github.event.pull_request.head.repo.fork }}
 
   build-docs:
     needs: build-test
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           cache: pip
 
@@ -131,10 +142,12 @@ jobs:
         run: make -C docs html
 
       - name: Upload documentation artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: docs
+          name: docs-${{ github.sha }}
           path: ./docs/_build/html/
+          overwrite: true
+          include-hidden-files: true
           retention-days: 7
 
   deploy-docs:
@@ -143,7 +156,7 @@ jobs:
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     steps:
       - name: Checkout documentation branch
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           ref: gh-pages
 
@@ -157,9 +170,10 @@ jobs:
           git rm -rf .
 
       - name: Download documentation artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
-          name: docs
+          name: docs-${{ github.sha }}
+          merge-multiple: true
 
       - name: Deploy documentation
         env:

@@ -2,9 +2,11 @@
 
 ## Table of Contents
 
+- [Table of Contents](#table-of-contents)
 - [Environment](#environment)
 - [Workflow](#workflow)
-- [CI/CD](#ci-cd)
+- [CI/CD](#cicd)
+- [Next Steps](#next-steps)
 
 ## Environment
 
@@ -36,7 +38,7 @@ To bring up a development environment:
    (cd beluga && ROSDISTRO=humble docker/run.sh)
    ```
 
-   Supported distributions include `noetic`, `humble`, `iron`, and `rolling`.
+   Supported distributions include `noetic`, `humble`, `jazzy`, and `rolling`.
 
 ## Workflow
 
@@ -47,6 +49,7 @@ Within a development environment:
 1. **Build and test the project**. You will usually use `colcon`.
 
     ```bash
+    . /opt/ros/${ROS_DISTRO}/setup.bash
     cd /ws
     colcon build --symlink-install
     colcon test
@@ -57,6 +60,7 @@ Within a development environment:
 2. **Update package dependencies**. Listed in `package.xml` files.
 
     ```bash
+    . /opt/ros/${ROS_DISTRO}/setup.bash
     cd /ws
     rosdep update
     rosdep install --from-path src

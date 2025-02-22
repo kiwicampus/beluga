@@ -26,6 +26,7 @@
 #include <range/v3/range/concepts.hpp>
 #include <range/v3/view/any_view.hpp>
 #include <range/v3/view/take_exactly.hpp>
+#include "beluga/policies/on_motion.hpp"
 
 namespace beluga {
 
@@ -88,8 +89,7 @@ class Amcl {
   using map_type = typename SensorModel::map_type;
   using spatial_hasher_type = spatial_hash<state_type>;
   using random_state_generator_type = RandomStateGenerator;
-  using estimation_type =
-      std::invoke_result_t<decltype(beluga::estimate<std::vector<state_type>>), std::vector<state_type>>;
+  using estimation_type = std::invoke_result_t<beluga::detail::estimate_fn, std::vector<state_type>>;
 
  public:
   /// Construct a AMCL instance.
@@ -115,7 +115,7 @@ class Amcl {
         execution_policy_{std::move(execution_policy)},
         spatial_hasher_{std::move(spatial_hasher)},
         random_probability_estimator_{params_.alpha_slow, params_.alpha_fast},
-        update_policy_{beluga::policies::on_motion(params_.update_min_d, params_.update_min_a)},
+        update_policy_{beluga::policies::on_motion<state_type>(params_.update_min_d, params_.update_min_a)},
         resample_policy_{beluga::policies::every_n(params_.resample_interval)},
         random_state_generator_(std::move(random_state_generator)) {
     if (params_.selective_resampling) {

@@ -20,12 +20,31 @@
 
 set -o errexit -o xtrace
 
+CMAKE_EXTRA_ARGS=""
+COLCON_EXTRA_ARGS=""
+
 if [ "${ROS_DISTRO}" != "noetic" ]; then
     ROS_PACKAGES="beluga beluga_ros beluga_amcl beluga_system_tests"
+    if [ "${ROS_DISTRO}" != "humble" ] && [ "${ROS_DISTRO}" != "iron" ]; then
+        ROS_PACKAGES="beluga beluga_ros beluga_amcl beluga_system_tests beluga_vdb"
+    fi
 else
     ROS_PACKAGES="beluga beluga_ros beluga_amcl"
 fi
 
 source /opt/ros/${ROS_DISTRO}/setup.sh
-colcon build --packages-up-to ${ROS_PACKAGES} --event-handlers=console_cohesion+ --symlink-install --mixin ccache
-echo ${ROS_PACKAGES} | xargs -n1 echo | xargs -I{} run-clang-tidy -j 4 -fix -p ./build/{} ${PWD}/src/.*
+
+if [ "${CMAKE_EXTRA_ARGS}" != "" ]; then
+    COLCON_EXTRA_ARGS="${COLCON_EXTRA_ARGS} --cmake-args ${CMAKE_EXTRA_ARGS}"
+fi
+colcon build --packages-up-to ${ROS_PACKAGES} --event-handlers=console_cohesion+ --symlink-install --mixin ccache ${COLCON_EXTRA_ARGS}
+echo ${ROS_PACKAGES} |
+    xargs -n1 echo |
+    # NOTE: `-Wno-gnu-zero-variadic-macro-arguments` is needed due to
+    # https://github.com/google/googletest/issues/2650, fixed in 1.11 but not backported to 1.10.
+    xargs -I{} run-clang-tidy \
+        -j=4 \
+        -fix \
+        -extra-arg='-Wno-gnu-zero-variadic-macro-arguments' \
+        -p=./build/{} \
+        ${PWD}/src/.*

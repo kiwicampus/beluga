@@ -18,16 +18,19 @@ add_executable(
   test_beluga
   actions/test_assign.cpp
   actions/test_normalize.cpp
+  actions/test_overlay.cpp
   actions/test_propagate.cpp
   actions/test_reweight.cpp
   algorithm/raycasting/test_bresenham.cpp
   algorithm/test_amcl_core.cpp
+  algorithm/test_cluster_based_estimation.cpp
   algorithm/test_distance_map.cpp
   algorithm/test_effective_sample_size.cpp
   algorithm/test_estimation.cpp
   algorithm/test_exponential_filter.cpp
   algorithm/test_raycasting.cpp
   algorithm/test_thrun_recovery_probability_estimator.cpp
+  algorithm/test_unscented_transform.cpp
   containers/test_circular_array.cpp
   containers/test_tuple_vector.cpp
   motion/test_differential_drive_model.cpp
@@ -49,8 +52,10 @@ add_executable(
   sensor/test_beam_model.cpp
   sensor/test_bearing_sensor_model.cpp
   sensor/test_landmark_sensor_model.cpp
+  sensor/test_lfm_with_unknown_space.cpp
   sensor/test_likelihood_field_model.cpp
   sensor/test_ndt_model.cpp
+  test_3d_embedding.cpp
   test_primitives.cpp
   test_spatial_hash.cpp
   testing/test_sophus_matchers.cpp

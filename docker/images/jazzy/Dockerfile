@@ -40,10 +40,10 @@ RUN apt-get update \
   && apt-get install --no-install-recommends -y \
     ccache \
     curl \
+    gcovr \
     gdb \
     git \
     lcov \
-    linux-cloud-tools-generic \
     linux-tools-common \
     linux-tools-generic \
     python3-colcon-coveragepy-result \
@@ -68,17 +68,22 @@ RUN perf help || ( \
 ARG USER=developer
 ARG GROUP=ekumen
 
+# Drop ubuntu user to avoid fixuid clashes.
+RUN deluser ubuntu
+
 RUN addgroup --gid 1001 $GROUP \
   && adduser --uid 1001 --ingroup $GROUP --home /home/$USER --shell /bin/sh --disabled-password --gecos "" $USER \
   && adduser $USER sudo \
   && echo "$USER ALL=NOPASSWD: ALL" >> /etc/sudoers.d/$USER
 
 COPY docker/files/fixuid_config.yml /etc/fixuid/config.yml
-RUN curl -SsL https://github.com/boxboat/fixuid/releases/download/v0.4/fixuid-0.4-linux-amd64.tar.gz | tar -C /usr/local/bin -xzf - \
+RUN /bin/bash -c '\
+     ARCH=`uname -m` && if [ "$ARCH" == "aarch64" ]; then FIXUID_ARCH="arm64"; else FIXUID_ARCH="amd64"; fi \
+  && curl -SsL https://github.com/boxboat/fixuid/releases/download/v0.6.0/fixuid-0.6.0-linux-$FIXUID_ARCH.tar.gz | tar -C /usr/local/bin -xzf - \
   && chmod 4755 /usr/local/bin/fixuid \
   && cd /etc/fixuid \
   && sed -i "s/_USER_/$USER/" config.yml \
-  && sed -i "s/_GROUP_/$GROUP/" config.yml
+  && sed -i "s/_GROUP_/$GROUP/" config.yml'
 
 RUN cd /opt && git clone https://github.com/brendangregg/FlameGraph
 
@@ -95,11 +100,14 @@ RUN mkdir -p /home/$USER/.ccache $USER_WS/src
 
 COPY --from=cacher --chown=$USER:$GROUP /tmp/ws/ $USER_WS/
 
-RUN sudo apt-get update \
-  && sudo apt-get -y dist-upgrade \
+USER root
+ENV PIP_BREAK_SYSTEM_PACKAGES 1
+
+RUN apt-get update \
+  && apt-get -y dist-upgrade \
   && . /opt/ros/jazzy/setup.sh \
   && rosdep update \
-  && rosdep install -i -y --from-path src --skip-keys 'turtlebot3_gazebo gazebo_ros_pkgs slam_toolbox nav2_amcl nav2_lifecycle_manager nav2_map_server' \
+  && rosdep install -i -y --from-path src \
   && rosdep install -i -y --from-path src -t doc \
   && sudo rm -rf /var/lib/apt/lists/*
 

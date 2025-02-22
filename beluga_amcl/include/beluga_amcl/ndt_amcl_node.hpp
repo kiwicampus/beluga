@@ -32,6 +32,8 @@
 #include <execution>
 #include <functional>
 #include <optional>
+#include <rclcpp/callback_group.hpp>
+#include <rclcpp/subscription_options.hpp>
 #include <sophus/se2.hpp>
 #include <tuple>
 #include <variant>
@@ -48,8 +50,12 @@
 #include <std_srvs/srv/empty.hpp>
 
 #include <beluga_ros/laser_scan.hpp>
+#include "beluga_amcl/ros2_common.hpp"
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wcpp"
 #include <message_filters/subscriber.h>
+#pragma GCC diagnostic pop
 
 /**
  * \file
@@ -80,52 +86,40 @@ using NdtAmcl = beluga::Amcl<
 using NdtAmclVariant = std::variant<
     NdtAmcl<beluga::StationaryModel, std::execution::parallel_policy>,            //
     NdtAmcl<beluga::StationaryModel, std::execution::sequenced_policy>,           //
-    NdtAmcl<beluga::DifferentialDriveModel, std::execution::parallel_policy>,     //
-    NdtAmcl<beluga::DifferentialDriveModel, std::execution::sequenced_policy>,    //
+    NdtAmcl<beluga::DifferentialDriveModel2d, std::execution::parallel_policy>,   //
+    NdtAmcl<beluga::DifferentialDriveModel2d, std::execution::sequenced_policy>,  //
     NdtAmcl<beluga::OmnidirectionalDriveModel, std::execution::parallel_policy>,  //
     NdtAmcl<beluga::OmnidirectionalDriveModel, std::execution::sequenced_policy>  //
     >;
 
 /// Supported motion models.
 using MotionModelVariant =
-    std::variant<beluga::DifferentialDriveModel, beluga::StationaryModel, beluga::OmnidirectionalDriveModel>;
+    std::variant<beluga::DifferentialDriveModel2d, beluga::StationaryModel, beluga::OmnidirectionalDriveModel>;
 
 /// Supported execution policies.
 using ExecutionPolicyVariant = std::variant<std::execution::sequenced_policy, std::execution::parallel_policy>;
 
 /// 2D NDT AMCL as a ROS 2 composable lifecycle node.
-class NdtAmclNode : public rclcpp_lifecycle::LifecycleNode {
+class NdtAmclNode : public BaseAMCLNode {
  public:
-  using rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
-
   /// Constructor.
-  explicit NdtAmclNode(const rclcpp::NodeOptions& options = rclcpp::NodeOptions());
-  ~NdtAmclNode() override;
+  explicit NdtAmclNode(const rclcpp::NodeOptions& options = rclcpp::NodeOptions{});
 
  protected:
-  /// Callback for lifecycle transitions from the UNCONFIGURED state to the INACTIVE state.
-  CallbackReturn on_configure(const rclcpp_lifecycle::State&) override;
-
   /// Callback for lifecycle transitions from the INACTIVE state to the ACTIVE state.
-  CallbackReturn on_activate(const rclcpp_lifecycle::State&) override;
+  void do_activate(const rclcpp_lifecycle::State&) override;
 
   /// Callback for lifecycle transitions from the ACTIVE state to the INACTIVE state.
-  CallbackReturn on_deactivate(const rclcpp_lifecycle::State&) override;
+  void do_deactivate(const rclcpp_lifecycle::State&) override;
 
   /// Callback for lifecycle transitions from the INACTIVE state to the UNCONFIGURED state.
-  CallbackReturn on_cleanup(const rclcpp_lifecycle::State&) override;
-
-  /// Callback for lifecycle transitions from most states to the FINALIZED state.
-  CallbackReturn on_shutdown(const rclcpp_lifecycle::State&) override;
+  void do_cleanup(const rclcpp_lifecycle::State&) override;
 
   /// Get initial pose estimate from parameters if set.
   auto get_initial_estimate() const -> std::optional<std::pair<Sophus::SE2d, Eigen::Matrix3d>>;
 
   /// Get motion model as per current parametrization.
   auto get_motion_model() const -> MotionModelVariant;
-
-  /// Get execution policy given its name.
-  auto get_execution_policy() const -> ExecutionPolicyVariant;
 
   /// Get sensor model as per current parametrization.
   beluga::NDTSensorModel<NDTMapRepresentation> get_sensor_model() const;
@@ -134,16 +128,13 @@ class NdtAmclNode : public rclcpp_lifecycle::LifecycleNode {
   auto make_particle_filter() const -> std::unique_ptr<NdtAmclVariant>;
 
   /// Callback for periodic particle cloud updates.
-  void timer_callback();
-
-  /// Callback for node to configure and activate itself.
-  void autostart_callback();
+  void do_periodic_timer_callback() override;
 
   /// Callback for laser scan updates.
   void laser_callback(sensor_msgs::msg::LaserScan::ConstSharedPtr);
 
   /// Callback for pose (re)initialization.
-  void initial_pose_callback(geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr);
+  void do_initial_pose_callback(geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr) override;
 
   /// Initialize particles from an estimated pose and covariance.
   /**
@@ -156,30 +147,10 @@ class NdtAmclNode : public rclcpp_lifecycle::LifecycleNode {
    */
   bool initialize_from_estimate(const std::pair<Sophus::SE2d, Eigen::Matrix3d>& estimate);
 
-  /// Node bond with the lifecycle manager.
-  std::unique_ptr<bond::Bond> bond_;
-  /// Timer for periodic particle cloud updates.
-  rclcpp::TimerBase::SharedPtr timer_;
-  /// Timer for node to configure and activate itself.
-  rclcpp::TimerBase::SharedPtr autostart_timer_;
-
-  /// Particle cloud publisher.
-  rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::PoseArray>::SharedPtr particle_cloud_pub_;
-  /// Estimated pose publisher.
-  rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pose_pub_;
-
-  /// Pose (re)initialization subscription.
-  rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr initial_pose_sub_;
   /// Laser scan updates subscription.
   std::unique_ptr<message_filters::Subscriber<sensor_msgs::msg::LaserScan, rclcpp_lifecycle::LifecycleNode>>
       laser_scan_sub_;
 
-  /// Transforms buffer.
-  std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
-  /// Transforms broadcaster.
-  std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
-  /// Transforms listener.
-  std::unique_ptr<tf2_ros::TransformListener> tf_listener_;
   /// Transform synchronization filter for laser scan updates.
   std::unique_ptr<tf2_ros::MessageFilter<sensor_msgs::msg::LaserScan>> laser_scan_filter_;
   /// Connection for laser scan updates filter and callback.

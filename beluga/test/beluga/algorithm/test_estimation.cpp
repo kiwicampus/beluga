@@ -15,18 +15,30 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <gtest/gtest-death-test.h>
 #include <algorithm>
+#include <array>
+#include <ios>
 #include <limits>
 #include <numeric>
+#include <range/v3/range/conversion.hpp>
+#include <range/v3/view/repeat_n.hpp>
+#include <range/v3/view/take_exactly.hpp>
+#include <range/v3/view/transform.hpp>
 #include <vector>
 
 #include <Eigen/Core>
+#include <beluga/random/multivariate_normal_distribution.hpp>
+#include <sophus/average.hpp>
 #include <sophus/common.hpp>
 #include <sophus/se2.hpp>
+#include <sophus/se3.hpp>
 #include <sophus/so2.hpp>
+#include <sophus/so3.hpp>
 
 #include "beluga/algorithm/estimation.hpp"
 #include "beluga/testing/sophus_matchers.hpp"
+#include "beluga/views/sample.hpp"
 
 namespace {
 
@@ -35,8 +47,11 @@ using beluga::testing::Vector3Near;
 
 using Constants = Sophus::Constants<double>;
 using Eigen::Vector2d;
+using Eigen::Vector3d;
 using Sophus::SE2d;
+using Sophus::SE3d;
 using Sophus::SO2d;
+using Sophus::SO3d;
 
 struct CovarianceCalculation : public testing::Test {};
 
@@ -52,7 +67,7 @@ TEST_F(CovarianceCalculation, UniformWeightOverload) {
       Vector2d{2, 0}, Vector2d{0, 2}, Vector2d{2, 2}, Vector2d{0, 2}, Vector2d{2, 0},
   };
   const auto translation_mean = Vector2d{1, 1};
-  const auto covariance = beluga::calculate_covariance(translation_vector, translation_mean);
+  const auto covariance = beluga::covariance(translation_vector, translation_mean);
   ASSERT_NEAR(covariance(0, 0), 1.1111, 0.001);
   ASSERT_NEAR(covariance(0, 1), 0.2222, 0.001);
   ASSERT_NEAR(covariance(1, 0), 0.2222, 0.001);
@@ -78,7 +93,7 @@ TEST_F(CovarianceCalculation, NonUniformWeightOverload) {
   const auto total_weight = std::accumulate(weights.begin(), weights.end(), 0.0);
   std::for_each(weights.begin(), weights.end(), [total_weight](auto& weight) { weight /= total_weight; });
   const auto translation_mean = Vector2d{1.1111, 1.1111};
-  const auto covariance = beluga::calculate_covariance(translation_vector, weights, translation_mean);
+  const auto covariance = beluga::covariance(translation_vector, weights, translation_mean);
   ASSERT_NEAR(covariance(0, 0), 1.1765, 0.001);
   ASSERT_NEAR(covariance(0, 1), 0.1176, 0.001);
   ASSERT_NEAR(covariance(1, 0), 0.1176, 0.001);
@@ -229,26 +244,107 @@ TEST_F(PoseCovarianceEstimation, RandomWalkWithSmoothRotationAndNonUniformWeight
   ASSERT_THAT(covariance.col(2).eval(), Vector3Near({0.0000, 0.0000, 0.0855}, kTolerance));
 }
 
-struct MeanStandardDeviationEstimation : public testing::Test {};
+struct ScalarEstimation : public testing::Test {};
 
-TEST_F(MeanStandardDeviationEstimation, UniformWeightOverload) {
-  // Mean and standard deviation estimation with uniform weights.
+TEST_F(ScalarEstimation, UniformWeightOverload) {
+  // Mean and variance estimation with uniform weights.
   const auto states = std::vector{0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 4.0, 4.0, 5.0, 5.0, 6.0, 7.0, 7.0, 8.0, 9.0};
   const auto weights = std::vector(states.size(), 1.0);
-  const auto estimation = beluga::estimate(states, weights);
+  const auto [mean, variance] = beluga::estimate(states, weights);
+  const auto standard_deviation = std::sqrt(variance);
   constexpr double kTolerance = 0.001;
-  ASSERT_NEAR(std::get<0>(estimation), 4.266, kTolerance);
-  ASSERT_NEAR(std::get<1>(estimation), 2.763, kTolerance);
+  ASSERT_NEAR(mean, 4.266, kTolerance);
+  ASSERT_NEAR(standard_deviation, 2.763, kTolerance);
 }
 
-TEST_F(MeanStandardDeviationEstimation, NonUniformWeightOverload) {
-  // Mean and standard deviation estimation with non-uniform weights.
+TEST_F(ScalarEstimation, NonUniformWeightOverload) {
+  // Mean and variance estimation with non-uniform weights.
   const auto states = std::vector{0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 4.0, 4.0, 5.0, 5.0, 6.0, 7.0, 7.0, 8.0, 9.0};
   const auto weights = std::vector{0.1, 0.15, 0.15, 0.3, 0.3, 0.4, 0.8, 0.8, 0.4, 0.4, 0.35, 0.3, 0.3, 0.15, 0.1};
-  const auto estimation = beluga::estimate(states, weights);
+  const auto [mean, variance] = beluga::estimate(states, weights);
+  const auto standard_deviation = std::sqrt(variance);
   constexpr double kTolerance = 0.001;
-  ASSERT_NEAR(std::get<0>(estimation), 4.300, kTolerance);
-  ASSERT_NEAR(std::get<1>(estimation), 2.026, kTolerance);
+  ASSERT_NEAR(mean, 4.300, kTolerance);
+  ASSERT_NEAR(standard_deviation, 2.055, kTolerance);
+}
+
+TEST_F(PoseCovarianceEstimation, MultiVariateNormalSE3) {
+  constexpr double kTolerance = 0.01;
+  const auto expected_mean =
+      Sophus::SE3d{Sophus::SO3d::exp(Eigen::Vector3d{-0.17, 0.25, 0.1}), Eigen::Vector3d{1.0, 2.0, 3.0}};
+  const Eigen::Matrix<double, 6, 6> expected_cov = Eigen::Matrix<double, 6, 6>::Identity() * 2e-1;
+  auto distribution = beluga::MultivariateNormalDistribution{expected_mean, expected_cov};
+  const auto samples = beluga::views::sample(distribution) |   //
+                       ranges::views::take_exactly(100'000) |  //
+                       ranges::to<std::vector>;
+  const auto [mean, cov] =
+      beluga::estimate(samples, ranges::views::repeat_n(1.0, static_cast<std::ptrdiff_t>(samples.size())));
+  ASSERT_TRUE(expected_mean.matrix().isApprox(mean.matrix(), kTolerance));
+  ASSERT_TRUE(((cov - expected_cov).array().abs() < kTolerance).all()) << std::fixed << (cov - expected_cov);
+}
+
+TEST_F(PoseCovarianceEstimation, WeightedSE3) {
+  constexpr double kTolerance = 0.001;
+  const auto states = std::vector{
+      Sophus::SE3d::rotZ(0.5),
+      Sophus::SE3d::rotZ(0.0),
+      Sophus::SE3d::rotZ(-.5),
+  };
+
+  {
+    const auto [mean, cov] = beluga::estimate(states, std::array{1., 1., 1.});
+    ASSERT_TRUE(mean.matrix().isApprox(Sophus::SE3d{}.matrix(), kTolerance));
+  }
+  {
+    const auto [mean, cov] = beluga::estimate(states, std::array{0.01, 0.01, 500.0});
+    ASSERT_TRUE(mean.matrix().isApprox(Sophus::SE3d::rotZ(-.5).matrix(), kTolerance)) << mean.matrix();
+  }
+}
+
+TEST(AverageQuaternion, AgainstSophusImpl) {
+  const auto quaternions = std::vector{
+      Eigen::Quaterniond::UnitRandom(),
+      Eigen::Quaterniond::UnitRandom(),
+      Eigen::Quaterniond::UnitRandom(),
+  };
+
+  {
+    auto quats_as_so3_view =
+        quaternions | ranges::views::transform([](const Eigen::Quaterniond& q) { return SO3d{q}; });
+    const auto avg_quaternion = beluga::mean(quaternions, std::array{1., 1., 1.});
+    const auto avg_quat_sophus = Sophus::details::averageUnitQuaternion(quats_as_so3_view | ranges::to<std::vector>);
+    ASSERT_TRUE(avg_quaternion.isApprox(avg_quat_sophus));
+  }
+
+  {
+    constexpr double kTolerance = 0.01;
+    auto quats_as_so3_view =
+        quaternions | ranges::views::transform([](const Eigen::Quaterniond& q) { return SO3d{q}; });
+    const auto avg_quaternion = beluga::mean(quaternions, std::array{1e-3, 1e-3, 1. - 2e-3});
+    const auto avg_quat_sophus = Sophus::details::averageUnitQuaternion(quats_as_so3_view | ranges::to<std::vector>);
+    ASSERT_FALSE(avg_quaternion.isApprox(avg_quat_sophus));
+    ASSERT_TRUE(avg_quaternion.isApprox(quaternions.back(), kTolerance));
+  }
+}
+
+TEST_F(PoseCovarianceEstimation, SE3EquallyWeighted) {
+  constexpr double kTolerance = 0.001;
+  const auto states = std::vector{
+      Sophus::SE3d::rotZ(0.5),
+      Sophus::SE3d::rotZ(0.0),
+      Sophus::SE3d::rotZ(-.5),
+  };
+
+  {
+    const auto [mean, cov] = beluga::estimate(states);
+    ASSERT_TRUE(mean.matrix().isApprox(Sophus::SE3d{}.matrix(), kTolerance));
+  }
+}
+
+TEST_F(PoseCovarianceEstimation, SE3BadArguments) {
+  ASSERT_DEBUG_DEATH(beluga::estimate(std::array{Sophus::SE3d{}}, std::array{1., 1., 1.}), ".*");
+  ASSERT_DEBUG_DEATH(beluga::estimate(std::array{Sophus::SE3d{}, Sophus::SE3d{}}, std::array{1., 1., 1.}), ".*");
+  ASSERT_DEBUG_DEATH(beluga::estimate(std::vector<Sophus::SE3d>{}, std::array{1., 1., 1.}), ".*");
 }
 
 }  // namespace

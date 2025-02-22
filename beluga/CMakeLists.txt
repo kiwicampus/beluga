@@ -33,8 +33,10 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
               -Wconversion
               -Werror
               -Wextra
-              -Wpedantic
-              -Wno-gnu-zero-variadic-macro-arguments)
+              -Wpedantic)
+endif()
+if(CMAKE_BUILD_TYPE MATCHES "Debug")
+  target_compile_options(beluga_compile_options INTERFACE -fno-inline)
 endif()
 
 find_package(Eigen3 REQUIRED NO_MODULE)
