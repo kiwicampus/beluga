@@ -38,14 +38,19 @@ ament_target_dependencies(
          rclcpp_lifecycle
          std_srvs)
 
-add_library(amcl_node_component SHARED)
-target_sources(amcl_node_component PRIVATE src/amcl_node.cpp)
-
-install(
-  TARGETS beluga_amcl_ros2_common
+# Install the target and add it to an export set
+install(TARGETS beluga_amcl_ros2_common
+  EXPORT beluga_amclTargets
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin)
+
+# Export the targets so that downstream packages (like multisensor_mcl) can link against them
+ament_export_targets(beluga_amclTargets)
+ament_export_include_directories("include/${PROJECT_NAME}")
+
+add_library(amcl_node_component SHARED)
+target_sources(amcl_node_component PRIVATE src/amcl_node.cpp)
 
 target_include_directories(
   amcl_node_component
